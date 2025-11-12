@@ -25,8 +25,13 @@ struct SwiftChat_AssistantApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ZStack {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+                RootView()
+            }
         }
         .modelContainer(sharedModelContainer)
     }
 }
+

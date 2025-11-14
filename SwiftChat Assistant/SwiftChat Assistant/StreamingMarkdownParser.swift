@@ -22,6 +22,9 @@ class StreamingMarkdownParser {
     var completedBlocks: [MarkdownBlock] = []
     var currentBlock: String = ""
     
+    // ✅ Flag to signal that animated characters should be cleared
+    var shouldClearAnimatedChars: Bool = false
+    
     private var buffer: String = ""
     private var inCodeBlock = false
     private var codeBlockFenceCount = 0
@@ -40,6 +43,7 @@ class StreamingMarkdownParser {
         currentBlock = ""
         inCodeBlock = false
         codeBlockFenceCount = 0
+        shouldClearAnimatedChars = false
     }
     
     // Parse buffer for completed blocks
@@ -95,6 +99,10 @@ class StreamingMarkdownParser {
                 let block = MarkdownBlock(content: codeBlockContent + "\n", type: .codeBlock)
                 completedBlocks.append(block)
                 buffer = String(buffer[end...])
+                
+                // ✅ Signal to clear animated characters
+                shouldClearAnimatedChars = true
+                
                 print("🟦 Code block completed: \(codeBlockContent.prefix(50))...")
                 return true
             }
@@ -126,6 +134,10 @@ class StreamingMarkdownParser {
                         
                         // Remove from buffer (including the newline)
                         buffer = lines.dropFirst().joined(separator: "\n")
+                        
+                        // ✅ Signal to clear animated characters
+                        shouldClearAnimatedChars = true
+                        
                         print("🟪 Heading completed: \(firstLine)")
                         return true
                     }
@@ -157,6 +169,10 @@ class StreamingMarkdownParser {
                 
                 // Remove from buffer
                 buffer = lines.dropFirst().joined(separator: "\n")
+                
+                // ✅ Signal to clear animated characters
+                shouldClearAnimatedChars = true
+                
                 print("🟨 List item completed: \(firstLine)")
                 return true
             }
@@ -177,6 +193,10 @@ class StreamingMarkdownParser {
                 let block = MarkdownBlock(content: paragraphContent, type: .paragraph)
                 completedBlocks.append(block)
                 buffer = String(buffer[range.upperBound...])
+                
+                // ✅ Signal to clear animated characters
+                shouldClearAnimatedChars = true
+                
                 print("🟩 Paragraph completed: \(trimmed.prefix(50))...")
                 return true
             } else {

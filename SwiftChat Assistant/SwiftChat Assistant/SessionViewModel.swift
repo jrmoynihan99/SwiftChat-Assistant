@@ -1,5 +1,26 @@
 import Foundation
 import Observation
+import UIKit  // ✅ Add this import
+
+// ✅ ADD THIS HELPER
+enum HapticFeedback {
+    static func light() {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+    
+    static func success() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+}
+
+// ✅ Character with animation state
+struct AnimatedCharacter: Identifiable {
+    let id = UUID()
+    let character: String
+    var opacity: Double = 0.0
+}
 
 @Observable
 final class SessionViewModel {
@@ -15,6 +36,9 @@ final class SessionViewModel {
     
     // ✅ Streaming markdown parser
     var markdownParser = StreamingMarkdownParser()
+    
+    // ✅ Animated characters for fade-in effect
+    var animatedCharacters: [AnimatedCharacter] = []
 
     // ✅ NEW: Decoupled buffering system
     private var masterBuffer: String = ""           // Fast GPT accumulation
@@ -73,6 +97,9 @@ final class SessionViewModel {
         // Clear the draft and set sending state
         sending = true
         draft = ""
+
+        // ✅ Haptic #1: Message sent
+        HapticFeedback.light()
         
         // Create a temporary user message to show immediately
         let tempUserMessage = Message(
@@ -101,10 +128,13 @@ final class SessionViewModel {
         self.streamingAssistantId = tempAssistantId
         self.currentTypingMessageId = tempAssistantId
         
-        // ✅ Reset parser and buffers for new message
+        // ✅ Reset parser, buffers, and animated characters for new message
         markdownParser.reset()
         masterBuffer = ""
         displayedSoFar = ""
+        animatedCharacters = []
+        
+        var hasFiredStartHaptic = false
         
         // ✅ Start typewriter timer
         startTypewriterTimer()
@@ -115,27 +145,19 @@ final class SessionViewModel {
                 chatID: chat.id,
                 content: content
             ) { @MainActor token in
-                // ✅ NEW: Just accumulate in master buffer (no parser yet)
+                // ✅ Just accumulate in master buffer
                 self.masterBuffer += token
-            }
-            
-            print("✅ Streaming complete, master buffer length: \(self.masterBuffer.count)")
-            print("📦 FULL MASTER BUFFER:")
-            print(self.masterBuffer.debugDescription)
-            print("🔍 CHECKING FOR NEWLINES:")
-            print("Contains \\n: \(self.masterBuffer.contains("\n"))")
-            print("First 300 chars with unicode scalars:")
-            for (index, char) in self.masterBuffer.prefix(300).enumerated() {
-                if char == "\n" {
-                    print("  Index \(index): NEWLINE CHARACTER FOUND")
+                
+                // ✅ Haptic #2: First token received (message started)
+                if !hasFiredStartHaptic {
+                    HapticFeedback.light()
+                    hasFiredStartHaptic = true
                 }
             }
             
-            // Wait for typewriter to finish before showing final message
-            // The timer will stop itself when displayedSoFar == masterBuffer
+            print("✅ Streaming complete, master buffer length: \(self.masterBuffer.count)")
             
-            // Update messages with server IDs after typewriter completes
-            // We'll do this in the timer's completion handler
+            // Wait for typewriter to finish before showing final message
             self.finalizeMessage(
                 tempUserMessageId: tempUserMessage.id,
                 tempAssistantId: tempAssistantId,
@@ -164,6 +186,7 @@ final class SessionViewModel {
             messages = messages + [errorMessage]
             self.streamingAssistantId = nil
             markdownParser.reset()
+            animatedCharacters = []
             
             // Restore the draft so user can retry
             draft = content
@@ -172,13 +195,12 @@ final class SessionViewModel {
         sending = false
     }
     
-    // ✅ NEW: Start typewriter timer that feeds parser at controlled pace
+    // ✅ UPDATED: Character-by-character typewriter with fade-in animation
     @MainActor
     private func startTypewriterTimer() {
         typewriterTimer?.invalidate()
         
-        // Create timer that runs even during scrolling
-        let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] timer in
+        let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self] timer in
             guard let self = self else {
                 timer.invalidate()
                 return
@@ -186,26 +208,39 @@ final class SessionViewModel {
             
             // Check if we've displayed everything
             if self.displayedSoFar.count >= self.masterBuffer.count {
-                // Typewriter is done
                 return
             }
             
-            // Get next chunk of characters (5 chars for smoother but not too fast)
-            let chunkSize = 5
+            // ✅ Get next single character (changed from 5 to 1)
             let startIndex = self.masterBuffer.index(
                 self.masterBuffer.startIndex,
                 offsetBy: self.displayedSoFar.count
             )
             let endIndex = self.masterBuffer.index(
                 startIndex,
-                offsetBy: min(chunkSize, self.masterBuffer.count - self.displayedSoFar.count)
+                offsetBy: 1
             )
             
-            let chunk = String(self.masterBuffer[startIndex..<endIndex])
-            self.displayedSoFar += chunk
+            let char = String(self.masterBuffer[startIndex..<endIndex])
+            self.displayedSoFar += char
             
-            // Feed to parser
-            self.markdownParser.addToken(chunk)
+            // ✅ Feed to parser (for markdown detection)
+            self.markdownParser.addToken(char)
+            
+            // ✅ Add to animated characters array with fade-in
+            let animChar = AnimatedCharacter(character: char, opacity: 0.0)
+            self.animatedCharacters.append(animChar)
+            
+            // Animate the newly added character
+            if let lastIndex = self.animatedCharacters.indices.last {
+                self.animatedCharacters[lastIndex].opacity = 1.0
+            }
+            
+            // ✅ Clear animated characters when parser completes a block
+            if self.markdownParser.shouldClearAnimatedChars {
+                self.animatedCharacters = []
+                self.markdownParser.shouldClearAnimatedChars = false
+            }
             
             // Force UI update by mutating messages array
             if let id = self.currentTypingMessageId,
@@ -217,19 +252,18 @@ final class SessionViewModel {
             }
         }
         
-        // Add timer to common run loop mode so it continues during scrolling
         RunLoop.current.add(timer, forMode: .common)
         typewriterTimer = timer
     }
     
-    // ✅ NEW: Stop typewriter timer
+    // ✅ Stop typewriter timer
     @MainActor
     private func stopTypewriterTimer() {
         typewriterTimer?.invalidate()
         typewriterTimer = nil
     }
     
-    // ✅ NEW: Finalize message with server IDs after typewriter completes
+    // ✅ Finalize message with server IDs after typewriter completes
     @MainActor
     private func finalizeMessage(
         tempUserMessageId: String,
@@ -266,14 +300,7 @@ final class SessionViewModel {
                 )
             }
             if let assistantIndex = updatedMessages.firstIndex(where: { $0.id == tempAssistantId }) {
-                // Use pristine server text for final render
                 let pristine = finalAssistantMsg.content
-                print("📄 FULL RAW MESSAGE FROM SERVER:")
-                print("First 200 chars with escapes shown:")
-                print(pristine.prefix(200).debugDescription)
-                print("🔍 FINAL MESSAGE - Contains \\n: \(pristine.contains("\n"))")  // ADD THIS
-                print(pristine)
-                print("📄 END OF MESSAGE")
                 updatedMessages[assistantIndex] = Message(
                     id: finalAssistantMsg.id,
                     chat_id: finalAssistantMsg.chat_id,
@@ -292,13 +319,17 @@ final class SessionViewModel {
                 return msg
             }
             
-            // Clear streaming state
+            // ✅ Haptic #3: Message finished (final markdown render)
+            HapticFeedback.success()
+            
+            // Clear streaming state and animated characters
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.streamingAssistantId = nil
                 self.currentTypingMessageId = nil
                 self.markdownParser.reset()
                 self.masterBuffer = ""
                 self.displayedSoFar = ""
+                self.animatedCharacters = []
             }
             
         }

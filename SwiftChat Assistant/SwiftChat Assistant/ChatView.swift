@@ -27,20 +27,22 @@ struct ChatView: View {
                                         MessageBubble(
                                             message: message,
                                             streamingAssistantId: session.streamingAssistantId,
-                                            parser: session.markdownParser
+                                            parser: session.markdownParser,
+                                            animatedCharacters: session.animatedCharacters
                                         ).id(message.id)
                                     }
                                     
                                     // Hidden marker at the bottom to detect scroll position
-                                    Color.clear
-                                        .frame(height: 1)
-                                        .id("bottom")
-                                        .onAppear {
-                                            isScrolledToBottom = true
-                                        }
-                                        .onDisappear {
-                                            isScrolledToBottom = false
-                                        }
+                                    GeometryReader { geometry in
+                                        Color.clear
+                                            .frame(height: 1)
+                                            .id("bottom")
+                                            .onChange(of: geometry.frame(in: .named("scroll")).minY) { _, newY in
+                                                // Check if bottom marker is visible in scroll view
+                                                isScrolledToBottom = newY < UIScreen.main.bounds.height
+                                            }
+                                    }
+                                    .frame(height: 1)
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 16)
@@ -49,6 +51,7 @@ struct ChatView: View {
                                 }
                             }
                         }
+                        .coordinateSpace(name: "scroll")
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: session.messages.count) { _, _ in
                             scrollToBottomIfNeeded()
@@ -76,7 +79,7 @@ struct ChatView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 180)
+                .frame(height: 80)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
@@ -89,7 +92,7 @@ struct ChatView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 180)
+                    .frame(height: 100)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .ignoresSafeArea(edges: .bottom)
                     .allowsHitTesting(false)
@@ -98,31 +101,28 @@ struct ChatView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 GlassEffectContainer(spacing: 12) {
-                    VStack(spacing: 8) {
-                        // Scroll to bottom button - centered above input
-                        if !isScrolledToBottom {
-                            HStack {
-                                Spacer()
-                                Button {
-                                    scrollToBottomAnimated()
-                                } label: {
-                                    Image(systemName: "arrow.down")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(10)
-                                        .glassEffect(.regular.interactive())
-                                        .glassEffectID("scrollButton", in: glassNS)
-                                }
-                                Spacer()
-                            }
-                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrolledToBottom)
-                        }
-                        
-                        composer
-                            .padding(.bottom, isComposerFocused ? 10 : 2)
-                    }
+                    composer
+                        .padding(.bottom, isComposerFocused ? 10 : 2)
                 }
             }
+            .overlay(alignment: .bottom) {
+                // Scroll to bottom button - positioned above composer without affecting layout
+                if !isScrolledToBottom {
+                    Button {
+                        scrollToBottomAnimated()
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .glassEffect(.regular.interactive())
+                            .glassEffectID("scrollButton", in: glassNS)
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                    .padding(.bottom, 60) // Position above composer
+                }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isScrolledToBottom)
             
             // Drawer overlay layer
             if showDrawer {
@@ -156,6 +156,9 @@ struct ChatView: View {
                 .focused($isComposerFocused)
 
             Button {
+                // ✅ Dismiss keyboard immediately
+                isComposerFocused = false
+                
                 Task { await session.send() }
             } label: {
                 ZStack {
@@ -173,7 +176,6 @@ struct ChatView: View {
             }
             .disabled(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.sending)
             .opacity((session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.sending) ? 0.5 : 1)
-            .padding(.trailing, 6)
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 6)
@@ -231,9 +233,12 @@ struct ChatView: View {
     
     private func scrollToBottomAnimated() {
         guard let proxy = scrollProxy else { return }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0.1)) {
+        
+        // Use a slightly faster, snappier animation that overrides momentum
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             proxy.scrollTo("bottom", anchor: .bottom)
         }
+        
         isScrolledToBottom = true
     }
     
@@ -244,11 +249,15 @@ struct ChatView: View {
     }
 }
 
-// ✅ MessageBubble with mixed rendering (completed blocks as Markdown, current block as Text)
+// ✅ MessageBubble with animated character rendering
 private struct MessageBubble: View {
     let message: Message
     let streamingAssistantId: String?
     @Bindable var parser: StreamingMarkdownParser
+    let animatedCharacters: [AnimatedCharacter]
+    
+    // ✅ State to hold the incrementally built AttributedString
+    @State private var displayedAttributedString = AttributedString("")
     
     var isUser: Bool { message.role.lowercased() == "user" }
     var isTyping: Bool { message.content.isEmpty && !isUser }
@@ -284,7 +293,7 @@ private struct MessageBubble: View {
                     if isTyping {
                         TypingIndicator()
                     } else if isStreaming {
-                        // ✅ STREAMING: Render completed blocks as Markdown, current block as Text
+                        // ✅ STREAMING: Completed blocks as Markdown, current text as animated characters
                         VStack(alignment: .leading, spacing: 8) {
                             // Completed blocks → MarkdownUI (retroactively formatted)
                             ForEach(parser.completedBlocks) { block in
@@ -293,11 +302,49 @@ private struct MessageBubble: View {
                                     .textSelection(.enabled)
                             }
                             
-                            // Current incomplete block → Plain Text (typewriter with raw markdown symbols)
-                            if !parser.currentBlock.isEmpty {
-                                Text(parser.currentBlock)
+                            // ✅ Current streaming text → Animated characters with fade-in
+                            if !animatedCharacters.isEmpty {
+                                Text(displayedAttributedString)
                                     .foregroundStyle(.white)
                                     .textSelection(.enabled)
+                                    .onChange(of: animatedCharacters.count) { oldCount, newCount in
+                                        // Immediately clear if array was emptied
+                                        if newCount == 0 {
+                                            displayedAttributedString = AttributedString("")
+                                            return
+                                        }
+                                        
+                                        // Only append the new character(s) incrementally
+                                        if newCount > oldCount {
+                                            for i in oldCount..<newCount {
+                                                let char = animatedCharacters[i]
+                                                var charString = AttributedString(char.character)
+                                                charString.foregroundColor = .white.opacity(char.opacity)
+                                                displayedAttributedString += charString
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: animatedCharacters.map { $0.opacity }) { _, opacities in
+                                        // Only update if we have characters
+                                        guard !animatedCharacters.isEmpty else { return }
+                                        
+                                        // Update opacity of characters when they animate
+                                        var updated = AttributedString("")
+                                        for char in animatedCharacters {
+                                            var charString = AttributedString(char.character)
+                                            charString.foregroundColor = .white.opacity(char.opacity)
+                                            updated += charString
+                                        }
+                                        withAnimation(.easeIn(duration: 0.5)) {
+                                            displayedAttributedString = updated
+                                        }
+                                    }
+                            } else {
+                                // Ensure state is cleared when array is empty
+                                Color.clear.frame(height: 0)
+                                    .onAppear {
+                                        displayedAttributedString = AttributedString("")
+                                    }
                             }
                         }
                     } else {
@@ -312,6 +359,7 @@ private struct MessageBubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 16)
+                .padding(.top, 40)
             }
         }
     }

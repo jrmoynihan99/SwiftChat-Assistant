@@ -3,7 +3,7 @@ import MarkdownUI
 
 struct ChatView: View {
     @Bindable var session: SessionViewModel
-    @Binding var showDrawer: Bool
+    @Binding var showDrawer: Bool   // still passed in, even if not used here now
     @State private var scrollProxy: ScrollViewProxy?
     @Namespace private var glassNS
     @FocusState private var isComposerFocused: Bool
@@ -29,7 +29,8 @@ struct ChatView: View {
                                             streamingAssistantId: session.streamingAssistantId,
                                             parser: session.markdownParser,
                                             animatedCharacters: session.animatedCharacters
-                                        ).id(message.id)
+                                        )
+                                        .id(message.id)
                                     }
                                     
                                     // Hidden marker at the bottom to detect scroll position
@@ -46,6 +47,7 @@ struct ChatView: View {
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 16)
+                                .padding(.top, 80)
                                 .onAppear {
                                     scrollProxy = scrollReader
                                 }
@@ -79,7 +81,7 @@ struct ChatView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 80)
+                .frame(height: 200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
@@ -123,25 +125,6 @@ struct ChatView: View {
                 }
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isScrolledToBottom)
-            
-            // Drawer overlay layer
-            if showDrawer {
-                Color.black.opacity(0.5)
-                    .ignoresSafeArea(.all)
-                    .onTapGesture {
-                        withAnimation(.snappy) { showDrawer = false }
-                    }
-                    .transition(.opacity)
-
-                HStack {
-                    drawer
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .leading).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
-                    Spacer()
-                }
-            }
         }
     }
 
@@ -156,7 +139,7 @@ struct ChatView: View {
                 .focused($isComposerFocused)
 
             Button {
-                // ✅ Dismiss keyboard immediately
+                // Dismiss keyboard immediately
                 isComposerFocused = false
                 
                 Task { await session.send() }
@@ -185,56 +168,9 @@ struct ChatView: View {
         .padding(.horizontal)
     }
     
-    private var drawer: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Chats")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                Button {
-                    Task { await session.createNewChat() }
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top, 60)
-            .padding(.bottom, 20)
-            
-            List {
-                ForEach(session.chats) { chat in
-                    Button {
-                        Task {
-                            try? await session.selectChat(chat)
-                            withAnimation(.snappy) { showDrawer = false }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: chat.id == session.currentChat?.id ? "message.fill" : "message")
-                                .foregroundColor(.white)
-                            Text(chat.title.isEmpty ? "Untitled" : chat.title)
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .listRowBackground(Color.clear)
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-        }
-        .frame(width: 280)
-        .frame(maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .ignoresSafeArea(.all)
-    }
-    
     private func scrollToBottomAnimated() {
         guard let proxy = scrollProxy else { return }
         
-        // Use a slightly faster, snappier animation that overrides momentum
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             proxy.scrollTo("bottom", anchor: .bottom)
         }
@@ -256,7 +192,7 @@ private struct MessageBubble: View {
     @Bindable var parser: StreamingMarkdownParser
     let animatedCharacters: [AnimatedCharacter]
     
-    // ✅ State to hold the incrementally built AttributedString
+    // State to hold the incrementally built AttributedString
     @State private var displayedAttributedString = AttributedString("")
     
     var isUser: Bool { message.role.lowercased() == "user" }
@@ -264,7 +200,6 @@ private struct MessageBubble: View {
     var isStreaming: Bool { streamingAssistantId == message.id }
     
     var body: some View {
-        
         HStack {
             if isUser {
                 Spacer(minLength: 40)
@@ -293,7 +228,7 @@ private struct MessageBubble: View {
                     if isTyping {
                         TypingIndicator()
                     } else if isStreaming {
-                        // ✅ STREAMING: Completed blocks as Markdown, current text as animated characters
+                        // STREAMING: Completed blocks as Markdown, current text as animated characters
                         VStack(alignment: .leading, spacing: 8) {
                             // Completed blocks → MarkdownUI (retroactively formatted)
                             ForEach(parser.completedBlocks) { block in
@@ -302,7 +237,7 @@ private struct MessageBubble: View {
                                     .textSelection(.enabled)
                             }
                             
-                            // ✅ Current streaming text → Animated characters with fade-in
+                            // Current streaming text → Animated characters with fade-in
                             if !animatedCharacters.isEmpty {
                                 Text(displayedAttributedString)
                                     .foregroundStyle(.white)
@@ -324,7 +259,7 @@ private struct MessageBubble: View {
                                             }
                                         }
                                     }
-                                    .onChange(of: animatedCharacters.map { $0.opacity }) { _, opacities in
+                                    .onChange(of: animatedCharacters.map { $0.opacity }) { _, _ in
                                         // Only update if we have characters
                                         guard !animatedCharacters.isEmpty else { return }
                                         
@@ -348,7 +283,7 @@ private struct MessageBubble: View {
                             }
                         }
                     } else {
-                        // ✅ FINAL: Pure MarkdownUI with decoded content
+                        // FINAL: Pure MarkdownUI with decoded content
                         let decoded = decodeContent(message.rawContent ?? message.content)
                         Markdown(decoded)
                             .id("final-\(message.id)")

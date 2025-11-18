@@ -211,16 +211,19 @@ final class SessionViewModel {
                 return
             }
             
-            // ✅ Get next single character (changed from 5 to 1)
+            // ✅ Get next chunk (up to 5 characters, or whatever's left)
             let startIndex = self.masterBuffer.index(
                 self.masterBuffer.startIndex,
                 offsetBy: self.displayedSoFar.count
             )
+            let remainingCount = self.masterBuffer.count - self.displayedSoFar.count
+            let chunkSize = min(5, remainingCount)
+
             let endIndex = self.masterBuffer.index(
                 startIndex,
-                offsetBy: 1
+                offsetBy: chunkSize
             )
-            
+
             let char = String(self.masterBuffer[startIndex..<endIndex])
             self.displayedSoFar += char
             

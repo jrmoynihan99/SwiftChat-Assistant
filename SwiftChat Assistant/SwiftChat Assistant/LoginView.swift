@@ -11,6 +11,7 @@ struct LoginView: View {
     // Login fields
     @State private var email: String = ""
     @State private var password: String = ""
+    @State private var showPassword: Bool = false
 
     // Signup fields
     @State private var firstName: String = ""
@@ -31,91 +32,287 @@ struct LoginView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Title
-            Text("SwiftChat")
-                .font(.largeTitle.bold())
-                .padding(.top, 24)
-
-            // Mode picker
-            Picker("Mode", selection: $mode) {
-                ForEach(AuthMode.allCases, id: \.self) { m in
-                    Text(m.rawValue).tag(m)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Hero section
+                        VStack(spacing: 12) {
+                            Text("SwiftChat")
+                                .font(.system(size: 48, weight: .bold))
+                                .foregroundStyle(.white)
+                            
+                            Text("Your personal AI assistant")
+                                .font(.title3)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        .padding(.top, 60)
+                        
+                        // Forms
+                        VStack(spacing: 20) {
+                            Group {
+                                if mode == .login { loginForm } else { signupForm }
+                            }
+                            .transition(.opacity)
+                            .id(mode) // This forces SwiftUI to treat them as different views
+                            
+                            // Error message
+                            if let errorMessage {
+                                Text(errorMessage)
+                                    .foregroundStyle(.red)
+                                    .font(.footnote)
+                                    .multilineTextAlignment(.center)
+                            }
+                            
+                            // Primary button right after form
+                            primaryButton(
+                                title: mode == .login ? "Log In" : "Create Account",
+                                isLoading: isLoading,
+                                action: submit
+                            )
+                        }
+                        .animation(.easeInOut(duration: 0.3), value: mode)
+                        .padding(.horizontal, 24)
+                    }
+                    .padding(.bottom, 120) // Space for bottom toggle
                 }
+                .scrollDismissesKeyboard(.interactively)
+                
+                Spacer()
+                
+                // Bottom toggle pinned to bottom
+                VStack(spacing: 16) {
+                    // Mode picker - taller design with segmented style
+                    Picker("Mode", selection: $mode) {
+                        ForEach(AuthMode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(height: 50)
+                    .padding(.horizontal, 24)
+                }
+                .padding(.bottom, 24)
+                .background(
+                    LinearGradient(
+                        colors: [Color.black.opacity(0), Color.black],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 200)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea()
+                )
             }
-            .pickerStyle(.segmented)
-
-            // Forms
-            Group {
-                if mode == .login { loginFormSimple } else { signupFormSimple }
-            }
-
-            // Error message
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-
-            // Primary button
-            primaryButton(title: mode == .login ? "Log In" : "Create Account", isLoading: isLoading, action: submit)
-                .padding(.top, 8)
-
-            Spacer()
         }
-        .padding()
         .onChange(of: mode) { _, newMode in
             DispatchQueue.main.async { focusFirstEmptyField(for: newMode) }
         }
     }
 
-    private var loginFormSimple: some View {
-        VStack(spacing: 12) {
-            TextField("Email", text: $email)
-                .textContentType(.username)
-                .keyboardType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .loginEmail)
-            SecureField("Password", text: $password)
-                .textContentType(nil)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .loginPassword)
+    private var loginForm: some View {
+        VStack(spacing: 16) {
+            // Email field
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.fill")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 20)
+                
+                TextField("Email", text: $email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(.white)
+                    .focused($focusedField, equals: .loginEmail)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            
+            // Password field
+            HStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 20)
+                
+                if showPassword {
+                    TextField("Password", text: $password)
+                        .textContentType(nil)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .loginPassword)
+                } else {
+                    SecureField("Password", text: $password)
+                        .textContentType(nil)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .loginPassword)
+                }
+                
+                Button {
+                    let currentField = focusedField
+                    showPassword.toggle()
+                    // Restore focus after toggling
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                        focusedField = currentField
+                    }
+                } label: {
+                    Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 20)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
         .onTapGesture { hasUserFocusedAField = true }
     }
 
-    private var signupFormSimple: some View {
-        VStack(spacing: 12) {
+    private var signupForm: some View {
+        VStack(spacing: 16) {
+            // First and Last name
             HStack(spacing: 12) {
-                TextField("First name", text: $firstName)
-                    .textInputAutocapitalization(.words)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .signupFirstName)
-                TextField("Last name", text: $lastName)
-                    .textInputAutocapitalization(.words)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .signupLastName)
+                HStack(spacing: 12) {
+                    Image(systemName: "person.fill")
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 20)
+                    
+                    TextField("First", text: $firstName)
+                        .textInputAutocapitalization(.words)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .signupFirstName)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+                
+                HStack(spacing: 12) {
+                    Image(systemName: "person.fill")
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 20)
+                    
+                    TextField("Last", text: $lastName)
+                        .textInputAutocapitalization(.words)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .signupLastName)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
             }
-            TextField("Email", text: $email)
-                .textContentType(.username)
-                .keyboardType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .signupEmail)
-            SecureField("Password", text: $password)
-                .textContentType(nil)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .signupPassword)
-            TextField("Phone number", text: $phoneNumber)
-                .textContentType(.telephoneNumber)
-                .keyboardType(.phonePad)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .signupPhone)
+            
+            // Email field
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.fill")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 20)
+                
+                TextField("Email", text: $email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(.white)
+                    .focused($focusedField, equals: .signupEmail)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            
+            // Password field
+            HStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 20)
+                
+                if showPassword {
+                    TextField("Password", text: $password)
+                        .textContentType(nil)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .signupPassword)
+                } else {
+                    SecureField("Password", text: $password)
+                        .textContentType(nil)
+                        .foregroundStyle(.white)
+                        .focused($focusedField, equals: .signupPassword)
+                }
+                
+                Button {
+                    let currentField = focusedField
+                    showPassword.toggle()
+                    // Restore focus after toggling
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                        focusedField = currentField
+                    }
+                } label: {
+                    Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 20)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            
+            // Phone number field
+            HStack(spacing: 12) {
+                Image(systemName: "phone.fill")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 20)
+                
+                TextField("Phone", text: $phoneNumber)
+                    .textContentType(.telephoneNumber)
+                    .keyboardType(.phonePad)
+                    .foregroundStyle(.white)
+                    .focused($focusedField, equals: .signupPhone)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
     }
 
@@ -184,24 +381,20 @@ struct LoginView: View {
                         .fontWeight(.semibold)
                 }
             }
-            .frame(height: 48)
             .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .foregroundStyle(.white)
+            .background(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.white.opacity(0.15))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.white.opacity(0.2), lineWidth: 1)
+            )
         }
-        .frame(maxWidth: .infinity)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .background(
-            LinearGradient(colors: [Color(.systemPink), Color(.systemOrange)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.25), lineWidth: 0.75)
-        )
-        .shadow(color: .indigo.opacity(0.35), radius: 12, x: 0, y: 6)
         .disabled(isLoading || !isValid)
-        .opacity(isLoading || !isValid ? 0.85 : 1)
+        .opacity(isLoading || !isValid ? 0.5 : 1)
     }
 }
 

@@ -43,6 +43,12 @@ struct ChatView: View {
                                             animatedCharacters: session.animatedCharacters
                                         )
                                         .id(message.id)
+                                        .transition(.asymmetric(
+                                            insertion: .move(edge: .bottom)
+                                                .combined(with: .opacity)
+                                                .combined(with: .scale(scale: 0.95)),
+                                            removal: .identity
+                                        ))
                                     }
                                     
                                     // Hidden marker at the bottom to detect scroll position
@@ -60,6 +66,7 @@ struct ChatView: View {
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 16)
                                 .padding(.top, 80)
+                                .animation(.spring(response: 0.4, dampingFraction: 0.75), value: session.messages.count)
                                 .onAppear {
                                     scrollProxy = proxy
                                 }
@@ -97,7 +104,7 @@ struct ChatView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 200)
+                .frame(height: 120)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)

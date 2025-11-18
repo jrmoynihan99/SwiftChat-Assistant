@@ -142,7 +142,7 @@ struct DrawerView: View {
         }
         .sheet(isPresented: $showAccountSheet) {
             AccountSheet(session: session)
-                .presentationDetents([.fraction(0.33), .medium])
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -161,38 +161,112 @@ private struct AccountSheet: View {
     @Bindable var session: SessionViewModel
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
+            // Drag indicator
             Capsule()
                 .fill(Color.secondary.opacity(0.3))
                 .frame(width: 40, height: 5)
                 .padding(.top, 8)
+                .padding(.bottom, 20)
 
-            VStack(spacing: 6) {
-                Text("\(session.user?.first_name ?? "") \(session.user?.last_name ?? "")")
-                    .font(.headline)
-                if let email = session.user?.email, !email.isEmpty {
-                    Text(email)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            // Profile section
+            VStack(spacing: 16) {
+                // Avatar circle
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 80, height: 80)
+                    .overlay {
+                        Text(getInitials())
+                            .font(.system(size: 32, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                
+                // User info
+                VStack(spacing: 8) {
+                    Text("\(session.user?.first_name ?? "") \(session.user?.last_name ?? "")")
+                        .font(.title3.weight(.semibold))
+                    
+                    if let email = session.user?.email, !email.isEmpty {
+                        Text(email)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(.top, 8)
+            .padding(.horizontal)
+            .padding(.bottom, 24)
+            
+            // Divider
+            Divider()
+                .padding(.horizontal)
+            
+            // Account details
+            VStack(spacing: 0) {
+                if let firstName = session.user?.first_name, !firstName.isEmpty {
+                    InfoRow(label: "First Name", value: firstName)
+                }
+                
+                if let lastName = session.user?.last_name, !lastName.isEmpty {
+                    InfoRow(label: "Last Name", value: lastName)
+                }
+                
+                if let email = session.user?.email, !email.isEmpty {
+                    InfoRow(label: "Email", value: email)
+                }
+            }
+            .padding(.vertical, 16)
 
             Spacer()
 
+            // Log out button
             Button(role: .destructive) {
                 session.signOut()
             } label: {
                 Text("Log Out")
+                    .font(.headline)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: 50)
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .padding(.horizontal)
             .padding(.bottom, 20)
         }
-        .padding(.horizontal)
+    }
+    
+    private func getInitials() -> String {
+        let firstName = session.user?.first_name ?? ""
+        let lastName = session.user?.last_name ?? ""
+        let firstInitial = firstName.first.map(String.init) ?? ""
+        let lastInitial = lastName.first.map(String.init) ?? ""
+        return "\(firstInitial)\(lastInitial)".uppercased()
     }
 }
 
+private struct InfoRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+}

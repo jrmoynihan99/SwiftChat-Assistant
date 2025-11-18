@@ -70,4 +70,9 @@ final class ChatService {
         
         return (userMessage: user, finalAssistantMessage: assistant)
     }
+    
+    func deleteChat(chatID: String) async throws {
+        // Backend path: DELETE /chats/{chat_id}
+        let _: EmptyResponse = try await APIClient.shared.send("/chats/\(chatID)", method: "DELETE")
+    }
 }

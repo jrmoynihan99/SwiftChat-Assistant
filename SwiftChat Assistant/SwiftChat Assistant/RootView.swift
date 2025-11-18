@@ -7,9 +7,7 @@ struct RootView: View {
         Group {
             switch session.state {
             case .loading:
-                ProgressView().task {
-                    try? await session.bootstrap()
-                }
+                ProgressView()
             case .signedOut:
                 LoginView { tokens, _ in
                     if let tokens = tokens {
@@ -24,3 +22,4 @@ struct RootView: View {
 }
 
 #Preview { RootView() }
+

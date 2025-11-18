@@ -21,8 +21,20 @@ struct ChatView: View {
                 VStack(spacing: 0) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            ScrollViewReader { scrollReader in
-                                VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                    if session.messages.isEmpty {
+                                        VStack(spacing: 12) {
+                                            Image(systemName: "bubble.left.and.bubble.right")
+                                                .font(.system(size: 28, weight: .semibold))
+                                                .foregroundStyle(.white.opacity(0.7))
+                                            Text("Start a new conversation")
+                                                .foregroundStyle(.white.opacity(0.8))
+                                                .font(.headline)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.top, 80)
+                                    }
+                                    
                                     ForEach(session.messages) { message in
                                         MessageBubble(
                                             message: message,
@@ -49,9 +61,8 @@ struct ChatView: View {
                                 .padding(.bottom, 16)
                                 .padding(.top, 80)
                                 .onAppear {
-                                    scrollProxy = scrollReader
+                                    scrollProxy = proxy
                                 }
-                            }
                         }
                         .coordinateSpace(name: "scroll")
                         .scrollDismissesKeyboard(.interactively)
@@ -71,6 +82,11 @@ struct ChatView: View {
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                             keyboardHeight = 0
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+                            if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                                keyboardHeight = frame.height
+                            }
                         }
                     }
                 }
@@ -125,6 +141,15 @@ struct ChatView: View {
                 }
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isScrolledToBottom)
+            .onChange(of: session.shouldFocusComposer) { _, newValue in
+                if newValue {
+                    DispatchQueue.main.async {
+                        isComposerFocused = true
+                        // Reset the flag so it only fires once per new chat
+                        session.shouldFocusComposer = false
+                    }
+                }
+            }
         }
     }
 
@@ -166,6 +191,10 @@ struct ChatView: View {
         .glassEffectID("composer", in: glassNS)
         .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
         .padding(.horizontal)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isComposerFocused = true
+        }
     }
     
     private func scrollToBottomAnimated() {
@@ -335,3 +364,4 @@ private struct TypingIndicator: View {
         }
     }
 }
+

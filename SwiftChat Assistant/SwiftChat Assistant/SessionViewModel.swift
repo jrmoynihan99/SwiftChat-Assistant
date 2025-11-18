@@ -39,34 +39,65 @@ final class SessionViewModel {
     
     // ✅ Animated characters for fade-in effect
     var animatedCharacters: [AnimatedCharacter] = []
+    
+    // One-shot flag to request composer focus when a brand-new chat is created
+    var shouldFocusComposer: Bool = false
 
     // ✅ NEW: Decoupled buffering system
     private var masterBuffer: String = ""           // Fast GPT accumulation
     private var displayedSoFar: String = ""         // What's been typed out to UI
     private var typewriterTimer: Timer?
     private var currentTypingMessageId: String?
+    
+    // Prevent overlapping bootstraps
+    private var isBootstrapping = false
 
     init() { Task { await self.bootstrap() } }
 
     @MainActor
     func bootstrap() async {
-        if APIClient.shared.loadTokens() == nil { self.state = .signedOut; return }
+        if isBootstrapping {
+            print("⏳ [Bootstrap] Already running; skipping re-entry")
+            return
+        }
+        isBootstrapping = true
+        defer { isBootstrapping = false }
+
+        if let tokens = APIClient.shared.loadTokens() {
+            print("🔑 [Bootstrap] Tokens found in Keychain: access(\(tokens.accessToken.prefix(8)))… refresh(\(tokens.refreshToken.prefix(8)))…")
+        } else {
+            print("🔑 [Bootstrap] No tokens found in Keychain — setting state to .signedOut")
+            self.state = .signedOut
+            return
+        }
         do {
+            print("🧪 [Bootstrap] Calling authCheck() to validate tokens…")
             let resp = try await AuthService.shared.authCheck()
             self.user = resp.user
             self.state = .signedIn
+            print("✅ [Bootstrap] authCheck succeeded — user: \(resp.user.email). Transitioned to .signedIn")
             try await loadOrCreateFirstChat()
-        } catch { self.state = .signedOut }
+        } catch {
+            // Only demote to signedOut if we haven't already signed in
+            if self.state != .signedIn {
+                print("❌ [Bootstrap] authCheck failed: \(error.localizedDescription). Transitioning to .signedOut")
+                self.state = .signedOut
+            } else {
+                print("⚠️ [Bootstrap] authCheck failed after already signed in: \(error.localizedDescription). Keeping .signedIn")
+            }
+        }
     }
 
     @MainActor
     func signOut() {
+        print("🚪 [Auth] signOut() called — clearing tokens and resetting session state")
         AuthService.shared.signOut()
         user = nil; chats = []; currentChat = nil; messages = []; draft = ""; state = .signedOut
     }
 
     @MainActor
     func didAuthenticate(_ resp: AuthWithTokensResponse) async {
+        print("🔐 [Auth] didAuthenticate received — user: \(resp.user.email)")
         self.user = resp.user
         self.state = .signedIn
         try? await loadOrCreateFirstChat()
@@ -83,10 +114,42 @@ final class SessionViewModel {
     }
 
     @MainActor
-    func createNewChat() async { if let chat = try? await ChatService.shared.createChat(title: nil) { chats.insert(chat, at: 0); try? await selectChat(chat) } }
+    func createNewChat() async {
+        if let chat = try? await ChatService.shared.createChat(title: nil) {
+            // Insert new chat at top and immediately switch context
+            chats.insert(chat, at: 0)
+            currentChat = chat
+            messages = []
+            draft = ""
+            streamingAssistantId = nil
+            animatedCharacters = []
+            markdownParser.reset()
+            self.shouldFocusComposer = true
+            HapticFeedback.light()
+            // Optionally prefetch messages (should be empty); keep async but don't block UI blank state
+            Task { [weak self] in
+                guard let self = self else { return }
+                let fetched = (try? await ChatService.shared.fetchMessages(chatID: chat.id)) ?? []
+                await MainActor.run {
+                    // Only apply if we're still on this chat
+                    if self.currentChat?.id == chat.id {
+                        self.messages = fetched
+                    }
+                }
+            }
+        }
+    }
 
     @MainActor
-    func selectChat(_ chat: Chat) async throws { currentChat = chat; messages = try await ChatService.shared.fetchMessages(chatID: chat.id) }
+    func selectChat(_ chat: Chat) async throws {
+        currentChat = chat
+        messages = []
+        draft = ""
+        streamingAssistantId = nil
+        animatedCharacters = []
+        markdownParser.reset()
+        messages = try await ChatService.shared.fetchMessages(chatID: chat.id)
+    }
 
     @MainActor
     func send() async {
@@ -217,7 +280,7 @@ final class SessionViewModel {
                 offsetBy: self.displayedSoFar.count
             )
             let remainingCount = self.masterBuffer.count - self.displayedSoFar.count
-            let chunkSize = min(5, remainingCount)
+            let chunkSize = min(3, remainingCount)
 
             let endIndex = self.masterBuffer.index(
                 startIndex,
@@ -337,4 +400,27 @@ final class SessionViewModel {
             
         }
     }
+    
+    @MainActor
+    func deleteChat(_ chat: Chat) async {
+        do {
+            try await ChatService.shared.deleteChat(chatID: chat.id)
+            // Remove from local list
+            chats.removeAll { $0.id == chat.id }
+
+            // If we deleted the current chat, select another if available
+            if currentChat?.id == chat.id {
+                if let first = chats.first {
+                    try? await selectChat(first)
+                } else {
+                    currentChat = nil
+                    messages = []
+                }
+            }
+            HapticFeedback.success()
+        } catch {
+            print("❌ Failed to delete chat: \(error)")
+        }
+    }
 }
+

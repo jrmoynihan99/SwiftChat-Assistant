@@ -61,7 +61,7 @@ struct ChatContainerView: View {
                         // NEW CHAT BUTTON
                         GlassEffectContainer(spacing: 12) {
                             Button {
-                                // future action
+                                Task { await session.createNewChat() }
                             } label: {
                                 Image(systemName: "square.and.pencil")
                                     .font(.system(size: 18, weight: .bold))

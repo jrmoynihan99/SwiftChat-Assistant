@@ -55,9 +55,23 @@ final class APIClient {
     private let tokenStore: TokenStore
     private let refreshQueue = DispatchQueue(label: "api.refresh.queue")
     init(urlSession: URLSession = .shared, tokenStore: TokenStore = KeychainTokenStore()) { self.urlSession = urlSession; self.tokenStore = tokenStore }
-    func loadTokens() -> AuthTokens? { tokenStore.load() }
-    func saveTokens(_ tokens: AuthTokens?) { tokenStore.save(tokens) }
-    func clearTokens() { tokenStore.clear() }
+    func loadTokens() -> AuthTokens? {
+        let t = tokenStore.load()
+        if let t { print("🔑 [Tokens] loadTokens -> FOUND (access: \(t.accessToken.prefix(8))…)") } else { print("🔑 [Tokens] loadTokens -> none") }
+        return t
+    }
+    func saveTokens(_ tokens: AuthTokens?) {
+        if let tokens {
+            print("💾 [Tokens] saveTokens — saving access: \(tokens.accessToken.prefix(8))… refresh: \(tokens.refreshToken.prefix(8))…")
+        } else {
+            print("💾 [Tokens] saveTokens — saving nil (clearing)")
+        }
+        tokenStore.save(tokens)
+    }
+    func clearTokens() {
+        print("🧹 [Tokens] clearTokens — deleting from Keychain")
+        tokenStore.clear()
+    }
 
     func send<T: Decodable>(_ path: String, method: String = "GET", body: Encodable? = nil, requiresAuth: Bool = true, retryOn401: Bool = true, responseType: T.Type = T.self) async throws -> T {
         let request = try buildRequest(path, method: method, body: body, requiresAuth: requiresAuth)
@@ -76,6 +90,8 @@ final class APIClient {
             }
             
             if http.statusCode == 401, requiresAuth {
+                let normalizedPath = path.hasPrefix("/") ? path : "/" + path
+                print("🔒 [Send] 401 received for \(method) \(normalizedPath). Will attempt refresh: \(retryOn401)")
                 if retryOn401, try await refreshAccessToken() {
                     return try await send(path, method: method, body: body, requiresAuth: requiresAuth, retryOn401: false, responseType: responseType)
                 } else { throw APIError.unauthorized }
@@ -108,7 +124,12 @@ final class APIClient {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
-        if requiresAuth, let token = tokenStore.load()?.accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if requiresAuth, let token = tokenStore.load()?.accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            print("📤 [Request] Attaching Authorization header for \(method) \(normalizedPath)")
+        } else if requiresAuth {
+            print("⚠️ [Request] requiresAuth but no access token available for \(method) \(normalizedPath)")
+        }
         if let body = body { request.httpBody = try JSONEncoder().encode(AnyEncodable(body)) }
         return request
     }
@@ -116,19 +137,21 @@ final class APIClient {
     private struct RefreshRequest: Encodable { let refresh_token: String }
     private struct RefreshResponse: Decodable { let access_token: String }
     private func refreshAccessToken() async throws -> Bool {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Bool, Error>) in
-            refreshQueue.async {
-                guard let tokens = self.tokenStore.load() else { cont.resume(returning: false); return }
-                Task {
-                    do {
-                        let req = RefreshRequest(refresh_token: tokens.refreshToken)
-                        let newToken: RefreshResponse = try await self.send("/token/refresh", method: "POST", body: req, requiresAuth: false, retryOn401: false)
-                        let updated = AuthTokens(accessToken: newToken.access_token, refreshToken: tokens.refreshToken)
-                        self.tokenStore.save(updated)
-                        cont.resume(returning: true)
-                    } catch { cont.resume(returning: false) }
-                }
-            }
+        print("🔁 [Refresh] Attempting token refresh…")
+        guard let tokens = self.tokenStore.load() else {
+            print("❌ [Refresh] No tokens available to refresh")
+            return false
+        }
+        do {
+            let req = RefreshRequest(refresh_token: tokens.refreshToken)
+            let newToken: RefreshResponse = try await self.send("/token/refresh", method: "POST", body: req, requiresAuth: false, retryOn401: false)
+            let updated = AuthTokens(accessToken: newToken.access_token, refreshToken: tokens.refreshToken)
+            self.tokenStore.save(updated)
+            print("✅ [Refresh] Refresh succeeded — new access: \(updated.accessToken.prefix(8))…")
+            return true
+        } catch {
+            print("❌ [Refresh] Refresh failed: \(error.localizedDescription)")
+            return false
         }
     }
 }

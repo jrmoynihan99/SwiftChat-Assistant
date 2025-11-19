@@ -63,7 +63,7 @@ struct ChatView: View {
                                     }
                                     .frame(height: 1)
                                 }
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, 0)
                                 .padding(.bottom, 16)
                                 .padding(.top, 80)
                                 .animation(.spring(response: 0.4, dampingFraction: 0.75), value: session.messages.count)
@@ -161,7 +161,7 @@ struct ChatView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 8) {  // Changed from .center to .bottom
             TextField("Message", text: $session.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .padding(.vertical, 6)
@@ -179,7 +179,7 @@ struct ChatView: View {
                 ZStack {
                     Circle()
                         .fill(Color.blue)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 34, height: 34)
                     if session.sending {
                         ProgressView().tint(.white)
                     } else {
@@ -194,8 +194,8 @@ struct ChatView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 6)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .glassEffectID("composer", in: glassNS)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 24))// Add fixed cornerRadius
+        .glassEffectID("", in: glassNS)
         .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
         .padding(.horizontal)
         .contentShape(Rectangle())
